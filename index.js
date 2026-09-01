@@ -32,6 +32,7 @@ async function run() {
     const database = client.db("startupforge");
     const startupCollection = database.collection("startups");
     const opportunityCollection = database.collection("opportunities");
+    const userCollection = database.collection("user");
 
     // All Startups Api
     app.get("/api/startups/:email", async (req, res) => {
@@ -91,15 +92,35 @@ async function run() {
 
     app.get("/api/opportunities/:email", async (req, res) => {
       const { email } = req.params;
-      const result = await opportunityCollection.find({   founderEmail: email }).toArray();
+      const result = await opportunityCollection
+        .find({ founderEmail: email })
+        .toArray();
       res.send(result);
     });
 
-    
-
     app.post("/api/opportunity", async (req, res) => {
       const opportunity = req.body;
-      const result = await opportunityCollection.insertOne(opportunity);
+      const founder = await userCollection.findOne({
+        email: opportunity?.founderEmail,
+      });
+      const founderOpportunitiesCounts =
+        await opportunityCollection.countDocuments({
+          founderEmail: opportunity?.founderEmail,
+        });
+
+      if (!founder?.isPremium && founderOpportunitiesCounts >= 3) {
+        return res
+          .status(401)
+          .send({
+            message:
+              "Your free limit is over.",
+          });
+      }
+
+      const result = await opportunityCollection.insertOne({
+        ...opportunity,
+        status: "pending",
+      });
       res.send(result);
     });
 
@@ -115,7 +136,7 @@ async function run() {
     app.patch("/api/opportunities/:id", async (req, res) => {
       const { id } = req.params;
       const result = await opportunityCollection.updateOne(
-        { _id: new ObjectId(id) },                    
+        { _id: new ObjectId(id) },
         { $set: req.body },
       );
       res.send(result);
