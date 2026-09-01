@@ -35,9 +35,11 @@ async function run() {
 
     // All Startups Api
     app.get("/api/startups/:email", async (req, res) => {
-      const {email} = req.params;
-      const result = await startupCollection.find({founderEmail: email}).toArray();
-      
+      const { email } = req.params;
+      const result = await startupCollection
+        .find({ founderEmail: email })
+        .toArray();
+
       res.send(result);
     });
 
@@ -87,16 +89,13 @@ async function run() {
 
     // All Opportunities Api
 
-    app.get("/api/opportunities", async (req, res) => {
-      const query = {};
-      if (req.query.companyId) {
-        query.companyId = req.query.companyId;
-      }
-
-      const cursor = opportunityCollection.find(query);
-      const result = await cursor.toArray();
+    app.get("/api/opportunities/:email", async (req, res) => {
+      const { email } = req.params;
+      const result = await opportunityCollection.find({   founderEmail: email }).toArray();
       res.send(result);
     });
+
+    
 
     app.post("/api/opportunity", async (req, res) => {
       const opportunity = req.body;
@@ -116,9 +115,23 @@ async function run() {
     app.patch("/api/opportunities/:id", async (req, res) => {
       const { id } = req.params;
       const result = await opportunityCollection.updateOne(
-        { _id: new ObjectId(id) },
+        { _id: new ObjectId(id) },                    
         { $set: req.body },
       );
+      res.send(result);
+    });
+
+    // Browse Opportunities Api
+    app.get("/api/opportunities", async (req, res) => {
+      const result = await opportunityCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.get("/api/opportunity/:id", async (req, res) => {
+      const { id } = req.params;
+      const result = await opportunityCollection.findOne({
+        _id: new ObjectId(id),
+      });
       res.send(result);
     });
 
