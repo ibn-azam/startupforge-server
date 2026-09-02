@@ -35,6 +35,28 @@ async function run() {
     const userCollection = database.collection("user");
 
     // All Startups Api
+
+    app.get("/api/startups", async (req, res) => {
+  
+    const { search, industry } = req.query;
+    const query = {};
+
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    if (industry) {
+      query.industry = { $in: industry.split(",") };
+    }
+
+    const result = await startupCollection.find(query).toArray();
+    res.send(result);
+  }
+);
+
     app.get("/api/startups/:email", async (req, res) => {
       const { email } = req.params;
       const result = await startupCollection
@@ -144,9 +166,29 @@ async function run() {
 
     // Browse Opportunities Api
     app.get("/api/opportunities", async (req, res) => {
-      const result = await opportunityCollection.find().toArray();
-      res.send(result);
-    });
+  
+    const { search, workType, industry } = req.query;
+    const query = {};
+
+    if (search) {
+      query.$or = [
+        { roleTitle: { $regex: search, $options: "i" } },
+        { requiredSkills: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    if (workType) {
+      query.workType = { $in: workType.split(",") };
+    }
+
+    if (industry) {
+      query.industry = { $in: industry.split(",") };
+    }
+    const cursor = opportunityCollection.find(query);
+    const result = await cursor.toArray();
+    res.send(result);
+  }
+);
 
     app.get("/api/opportunity/:id", async (req, res) => {
       const { id } = req.params;
