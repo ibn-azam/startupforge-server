@@ -112,6 +112,22 @@ async function run() {
 
     // All Opportunities Api
 
+
+  
+
+app.get("/opportunities/latest", async (req, res) => {
+  
+  const limit = parseInt(req.query.limit) || 3;
+
+  const latest = await opportunityCollection
+    .find({})
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray();
+
+  res.send(latest);
+});
+
     app.get("/api/opportunities/:email", async (req, res) => {
       const { email } = req.params;
       const result = await opportunityCollection
@@ -165,9 +181,15 @@ async function run() {
     });
 
     // Browse Opportunities Api
-    app.get("/api/opportunities", async (req, res) => {
+   app.get("/api/opportunities", async (req, res) => {
   
-    const { search, workType, industry } = req.query;
+    const { search, workType, industry, page = 1, limit = 6 } = req.query;
+    
+   
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 6;
+    const skip = (pageNum - 1) * limitNum;
+
     const query = {};
 
     if (search) {
@@ -184,10 +206,27 @@ async function run() {
     if (industry) {
       query.industry = { $in: industry.split(",") };
     }
-    const cursor = opportunityCollection.find(query);
-    const result = await cursor.toArray();
-    res.send(result);
-  }
+
+    
+    const totalCount = await opportunityCollection.countDocuments(query);
+
+    
+    const result = await opportunityCollection
+      .find(query)
+      .skip(skip)
+      .limit(limitNum)
+      .toArray();
+
+    
+    const totalPages = Math.ceil(totalCount / limitNum) || 1;
+
+    res.json({
+      data: result,
+      totalCount,
+      totalPages,
+      currentPage: pageNum,
+    });
+  } 
 );
 
     app.get("/api/opportunity/:id", async (req, res) => {
@@ -195,6 +234,15 @@ async function run() {
       const result = await opportunityCollection.findOne({
         _id: new ObjectId(id),
       });
+      res.send(result);
+    });
+
+    app.patch('/api/user/:email', async (req, res) => {
+      const { email } = req.params;
+      const result = await userCollection.updateOne(
+        { email: email },
+        { $set: { isPremium: true } }
+      );
       res.send(result);
     });
 
