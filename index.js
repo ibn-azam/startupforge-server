@@ -83,7 +83,7 @@ async function run() {
         fundingStage,
         founderEmail,
         createdAt: new Date(),
-        status: "active",
+        status: "pending",
       };
 
       const result = await startupCollection.insertOne(startup);
@@ -305,13 +305,76 @@ async function run() {
       res.send(result);
     });
 
+    // Admin Api
+     app.get("/api/admin/stats", async (req, res) => {
+    const [totalUsers, premiumUsers, founders, collaborators] = await Promise.all([
+      userCollection.countDocuments(),
+      userCollection.countDocuments({ isPremium: true }),
+      userCollection.countDocuments({ role: "founder" }),
+      userCollection.countDocuments({ role: "collaborator" }),
+    ]);
+    res.send({ totalUsers, premiumUsers, founders, collaborators });
+  });
+
+  app.get("/api/admin/users", async (req, res) => {
+    const records = await userCollection
+      .find(
+        {},
+        {
+          projection: {
+            name: 1,
+            email: 1,
+            role: 1,
+            image: 1,
+            isPremium: 1,
+            isBlocked: 1,
+            createdAt: 1,
+          },
+        },
+      )
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.send(records);
+  });
+
+  app.patch("/api/admin/users/:id/block", async (req, res) => {
+    const { id } = req.params;
+    const { isBlocked } = req.body;
+    const result = await userCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { isBlocked } },
+    );
+    res.send(result);
+  });
+
+  app.get("/api/admin/startups", async (req, res) => {
+    const records = await startupCollection.find({}).sort({ createdAt: -1 }).toArray();
+    res.send(records);
+  });
+
+  app.patch("/api/admin/startups/:id/approve", async (req, res) => {
+    const { id } = req.params;
+    const result = await startupCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status: "active" } },
+    );
+    res.send(result);
+  });
+
+  app.delete("/api/admin/startups/:id", async (req, res) => {
+    const { id } = req.params;
+    const result = await startupCollection.deleteOne({ _id: new ObjectId(id) });
+    res.send(result);
+  });
+
+
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB",
     );
   } finally {
     // await client.close();
-  }
+  } 
 }
 run().catch(console.dir);
 
