@@ -10,6 +10,7 @@ app.use(cors());
 app.use(express.json());
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { createRemoteJWKSet, jwtVerify } = require("jose-cjs");
 
 const uri = process.env.MONGODB_URI;
 
@@ -25,11 +26,39 @@ const client = new MongoClient(uri, {
   },
 });
 
-async function run() {
-  try {
-    await client.connect();
+const JWKS = createRemoteJWKSet(
+  new URL("https://startupforge-blush.vercel.app/api/auth/jwks")
+)
 
-    const database = client.db("startupforge");
+const verifyToken = async(req,res,next)=>{
+  const authHeader = req?.headers.authorization
+  if(!authHeader){
+    return res.status(401).json({message : "Unauthorized"});
+  }
+  const token = authHeader.split(" ")[1];
+  if(!token){
+    return res.status(401).json({message : "Unauthorized"});
+  }
+
+  try{
+    const {payload} = await jwtVerify(token,JWKS)
+    console.log(payload)
+    next()
+  }catch{
+    return res.status(403).json({message:"Forbidden"});
+  }
+  
+}
+
+// async function run() {
+//   try {
+//     await client.connect();
+
+client.connect(()=>{
+  console.log('çonnecting to MongoDB')
+}).catch(console.dir)
+
+    const database = client.db(process.env.DB);
     const startupCollection = database.collection("startups");
     const opportunityCollection = database.collection("opportunities");
     const applicationCollection = database.collection("applications");
@@ -62,6 +91,14 @@ async function run() {
         .find({ founderEmail: email })
         .toArray();
 
+      res.send(result);
+    });
+
+    app.get("/api/opportunity/:id", async (req, res) => {
+      const { id } = req.params;
+      const result = await opportunityCollection.findOne({
+        _id: new ObjectId(id),
+      });
       res.send(result);
     });
 
@@ -116,14 +153,14 @@ async function run() {
 
       const latest = await opportunityCollection
         .find({})
-        .sort({ createdAt: -1 })
+        .sort({ createdAt: -1 })  
         .limit(limit)
         .toArray();
 
       res.send(latest);
     });
 
-    app.get("/api/opportunities/:email", async (req, res) => {
+    app.get("/api/opportunities/:email",verifyToken,async (req, res) => {
       const { email } = req.params;
       const result = await opportunityCollection
         .find({ founderEmail: email })
@@ -306,78 +343,84 @@ async function run() {
     });
 
     // Admin Api
-     app.get("/api/admin/stats", async (req, res) => {
-    const [totalUsers, premiumUsers, founders, collaborators] = await Promise.all([
-      userCollection.countDocuments(),
-      userCollection.countDocuments({ isPremium: true }),
-      userCollection.countDocuments({ role: "founder" }),
-      userCollection.countDocuments({ role: "collaborator" }),
-    ]);
-    res.send({ totalUsers, premiumUsers, founders, collaborators });
-  });
+    app.get("/api/admin/stats", async (req, res) => {
+      const [totalUsers, premiumUsers, founders, collaborators] =
+        await Promise.all([
+          userCollection.countDocuments(),
+          userCollection.countDocuments({ isPremium: true }),
+          userCollection.countDocuments({ role: "founder" }),
+          userCollection.countDocuments({ role: "collaborator" }),
+        ]);
+      res.send({ totalUsers, premiumUsers, founders, collaborators });
+    });
 
-  app.get("/api/admin/users", async (req, res) => {
-    const records = await userCollection
-      .find(
-        {},
-        {
-          projection: {
-            name: 1,
-            email: 1,
-            role: 1,
-            image: 1,
-            isPremium: 1,
-            isBlocked: 1,
-            createdAt: 1,
+    app.get("/api/admin/users", async (req, res) => {
+      const records = await userCollection
+        .find(
+          {},
+          {
+            projection: {
+              name: 1,
+              email: 1,
+              role: 1,
+              image: 1,
+              isPremium: 1,
+              isBlocked: 1,
+              createdAt: 1,
+            },
           },
-        },
-      )
-      .sort({ createdAt: -1 })
-      .toArray();
-    res.send(records);
-  });
+        )
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.send(records);
+    });
 
-  app.patch("/api/admin/users/:id/block", async (req, res) => {
-    const { id } = req.params;
-    const { isBlocked } = req.body;
-    const result = await userCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { isBlocked } },
-    );
-    res.send(result);
-  });
+    app.patch("/api/admin/users/:id/block", async (req, res) => {
+      const { id } = req.params;
+      const { isBlocked } = req.body;
+      const result = await userCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { isBlocked } },
+      );
+      res.send(result);
+    });
 
-  app.get("/api/admin/startups", async (req, res) => {
-    const records = await startupCollection.find({}).sort({ createdAt: -1 }).toArray();
-    res.send(records);
-  });
+    app.get("/api/admin/startups", async (req, res) => {
+      const records = await startupCollection
+        .find({})
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.send(records);
+    });
 
-  app.patch("/api/admin/startups/:id/approve", async (req, res) => {
-    const { id } = req.params;
-    const result = await startupCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { status: "active" } },
-    );
-    res.send(result);
-  });
+    app.patch("/api/admin/startups/:id/approve", async (req, res) => {
+      const { id } = req.params;
+      const result = await startupCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status: "active" } },
+      );
+      res.send(result);
+    });
 
-  app.delete("/api/admin/startups/:id", async (req, res) => {
-    const { id } = req.params;
-    const result = await startupCollection.deleteOne({ _id: new ObjectId(id) });
-    res.send(result);
-  });
+    app.delete("/api/admin/startups/:id", async (req, res) => {
+      const { id } = req.params;
+      const result = await startupCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+      res.send(result);
+    });
 
-
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB",
-    );
-  } finally {
-    // await client.close();
-  } 
-}
-run().catch(console.dir);
+    // await client.db("admin").command({ ping: 1 });
+//     console.log(
+//       "Pinged your deployment. You successfully connected to MongoDB",
+//     );
+//   } finally {
+//     // await client.close();
+//   }
+// }
+// run().catch(console.dir);
 
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
 });
+module.exports = app;
