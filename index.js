@@ -27,7 +27,7 @@ const client = new MongoClient(uri, {
 });
 
 const JWKS = createRemoteJWKSet(
-  new URL("https://startupforge-blush.vercel.app/api/auth/jwks")
+  new URL("http://localhost:3000/api/auth/jwks")
 )
 
 const verifyToken = async(req,res,next)=>{
@@ -40,13 +40,13 @@ const verifyToken = async(req,res,next)=>{
     return res.status(401).json({message : "Unauthorized"});
   }
 
-  try{
-    const {payload} = await jwtVerify(token,JWKS)
-    console.log(payload)
-    next()
-  }catch{
-    return res.status(403).json({message:"Forbidden"});
-  }
+try{
+  const {payload} = await jwtVerify(token,JWKS)
+  req.user = payload;
+  next()
+}catch(err){
+  return res.status(403).json({message:"Forbidden"});
+}
   
 }
 
@@ -94,9 +94,9 @@ client.connect(()=>{
       res.send(result);
     });
 
-    app.get("/api/opportunity/:id", async (req, res) => {
+    app.get("/api/startup/:id", async (req, res) => {
       const { id } = req.params;
-      const result = await opportunityCollection.findOne({
+      const result = await startupCollection.findOne({
         _id: new ObjectId(id),
       });
       res.send(result);
@@ -342,6 +342,107 @@ client.connect(()=>{
       res.send(result);
     });
 
+    app.get("/api/user/me", verifyToken, async (req, res) => {
+  try {
+    const email = req.user.email;
+    if (!email) {
+      return res.status(401).json({ message: "User email not found in token." });
+    }
+
+    const user = await userCollection.findOne(
+      { email },
+      {
+        projection: {
+          _id: 1,
+          name: 1,
+          email: 1,
+          image: 1,
+          role: 1,
+          isPremium: 1,
+          isBlocked: 1,
+          skills: 1,
+          bio: 1,
+        },
+      }
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    if (user.isBlocked) {
+      return res.status(403).json({ message: "Your account has been blocked." });
+    }
+
+    res.status(200).json(user);
+  } catch (error) {
+    console.error("GET /me error:", error);
+    res.status(500).json({ message: "Failed to fetch profile." });
+  }
+});
+
+app.patch("/api/user/me", verifyToken, async (req, res) => {
+  try {
+    const email = req.user.email;
+    if (!email) {
+      return res.status(401).json({ message: "User email not found in token." });
+    }
+
+    const { name, image, skills, bio } = req.body;
+
+    await userCollection.updateOne(
+      { email },
+      { $set: { name, image, skills, bio } }
+    );
+
+    const user = await userCollection.findOne(
+      { email },
+      {
+        projection: {
+          _id: 1,
+          name: 1,
+          email: 1,
+          image: 1,
+          role: 1,
+          isPremium: 1,
+          isBlocked: 1,
+          skills: 1,
+          bio: 1,
+        },
+      }
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    res.status(200).json(user);
+  } catch (error) {
+    console.error("PATCH /me error:", error);
+    res.status(500).json({ message: "Failed to update profile." });
+  }
+});
+
+app.delete("/api/user/me", verifyToken, async (req, res) => {
+  try {
+    const email = req.user.email;
+    if (!email) {
+      return res.status(401).json({ message: "User email not found in token." });
+    }
+
+    const result = await userCollection.deleteOne({ email });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    res.status(200).json({ message: "Account deleted successfully." });
+  } catch (error) {
+    console.error("DELETE /me error:", error);
+    res.status(500).json({ message: "Failed to delete account." });
+  }
+});
+
     // Admin Api
     app.get("/api/admin/stats", async (req, res) => {
       const [totalUsers, premiumUsers, founders, collaborators] =
@@ -409,6 +510,9 @@ client.connect(()=>{
       });
       res.send(result);
     });
+
+
+    
 
     // await client.db("admin").command({ ping: 1 });
 //     console.log(
