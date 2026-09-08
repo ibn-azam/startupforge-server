@@ -8,6 +8,8 @@ const port = process.env.PORT;
 const cors = require("cors");
 app.use(cors());
 app.use(express.json());
+const Stripe = require("stripe");
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { createRemoteJWKSet, jwtVerify } = require("jose-cjs");
@@ -63,6 +65,155 @@ client.connect(()=>{
     const opportunityCollection = database.collection("opportunities");
     const applicationCollection = database.collection("applications");
     const userCollection = database.collection("user");
+    const paymentCollection = database.collection("payments");
+
+ app.post("/api/payments", verifyToken, async (req, res) => {
+  try {
+    const { user_email, amount, transaction_id, payment_status, paid_at } = req.body;
+
+    if (!user_email || !transaction_id) {
+      return res.status(400).json({ message: "Missing required payment fields." });
+    }
+
+    const payment = {
+      user_email,
+      amount,
+      transaction_id,
+      payment_status,
+      paid_at: paid_at ? new Date(paid_at) : new Date(),
+      createdAt: new Date(),
+    };
+
+    const result = await paymentCollection.insertOne(payment);
+    res.status(201).json(result);
+  } catch (error) {
+    console.error("POST /api/payments error:", error);
+    res.status(500).json({ message: "Failed to record payment." });
+  }
+});
+
+// New Admin Api
+// Admin Stats
+app.get("/api/admin/stats", async (req, res) => {
+  try {
+    const [totalUsers, premiumUsers, founders, collaborators] = await Promise.all([
+      userCollection.countDocuments(),
+      userCollection.countDocuments({ isPremium: true }),
+      userCollection.countDocuments({ role: "founder" }),
+      userCollection.countDocuments({ role: "collaborator" }),
+    ]);
+    res.json({ totalUsers, premiumUsers, founders, collaborators });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch admin stats." });
+  }
+});
+
+// Admin Users List
+app.get("/api/admin/users", async (req, res) => {
+  try {
+    const records = await userCollection
+      .find(
+        {},
+        {
+          projection: {
+            name: 1,
+            email: 1,
+            role: 1,
+            image: 1,
+            isPremium: 1,
+            isBlocked: 1,
+            createdAt: 1,
+          },
+        }
+      )
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.json(records);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch users." });
+  }
+});
+
+// Admin Block/Unblock User
+app.patch("/api/admin/users/:id/block", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isBlocked } = req.body;
+    const result = await userCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { isBlocked } }
+    );
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ message: "Failed to update user block status." });
+  }
+});
+
+// Admin Startups List
+app.get("/api/admin/startups", async (req, res) => {
+  try {
+    const records = await startupCollection
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.json(records);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch startups." });
+  }
+});
+
+// Admin Approve Startup
+app.patch("/api/admin/startups/:id/approve", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await startupCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status: "active" } }
+    );
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ message: "Failed to approve startup." });
+  }
+});
+
+// Admin Delete Startup
+app.delete("/api/admin/startups/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await startupCollection.deleteOne({
+      _id: new ObjectId(id),
+    });
+    res.json(result);
+  } catch (error) {
+    res.status(400).json({ message: "Failed to delete startup." });
+  }
+});
+
+// Admin Stripe Transactions
+app.get("/api/admin/transactions", async (req, res) => {
+  try {
+    const sessions = await stripe.checkout.sessions.list({
+      limit: 100,
+      expand: ["data.line_items"],
+    });
+
+    const transactions = sessions.data.map((session) => ({
+      id: session.id,
+      email: session.customer_details?.email || session.customer_email || "-",
+      amount: session.amount_total || 0,
+      currency: session.currency || "usd",
+      status: session.payment_status || session.status || "unknown",
+      createdAt: session.created
+        ? new Date(session.created * 1000).toISOString()
+        : null,
+    }));
+
+    res.json(transactions);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch transactions." });
+  }
+});
+
 
     // All Startups Api
 
