@@ -6,8 +6,7 @@ const app = express();
 require("dotenv").config();
 const port = process.env.PORT;
 const cors = require("cors");
-const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:3000")
-  .split(",")
+const allowedOrigins = process.env.CLIENT_ORIGIN.split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
 app.use(
@@ -412,6 +411,18 @@ app.get(
 
 // All Startups Api
 
+app.get("/api/startups/latest", async (req, res) => {
+  const limit = parseInt(req.query.limit) || 3;
+
+  const latest = await startupCollection
+    .find({})
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray();
+
+  res.send(latest);
+});
+
 app.get("/api/startups", async (req, res) => {
   const { search, industry } = req.query;
   const query = {};
@@ -431,7 +442,7 @@ app.get("/api/startups", async (req, res) => {
   res.send(result);
 });
 
-app.get("/api/startups/:email", async (req, res) => {
+app.get("/api/startups/:email", verifyToken, async (req, res) => {
   const { email } = req.params;
   const result = await startupCollection
     .find({ founderEmail: email })
@@ -449,23 +460,36 @@ app.get("/api/startup/:id", async (req, res) => {
 });
 
 app.post("/api/startup", verifyToken, async (req, res) => {
-  const { name, logoUrl, industry, description, fundingStage } = req.body;
-  if (req.dbUser.role !== "founder")
-    return res.status(403).json({ message: "Founder access required." });
+  try {
+    const { name, logoUrl, industry, description, fundingStage } = req.body;
 
-  const startup = {
-    name,
-    logoUrl,
-    industry,
-    description,
-    fundingStage,
-    founderEmail: req.user.email,
-    createdAt: new Date(),
-    status: "pending",
-  };
+    if (req.dbUser.role !== "founder") {
+      return res.status(403).json({ message: "Founder access required." });
+    }
 
-  const result = await startupCollection.insertOne(startup);
-  res.send(result);
+    if (!name || !industry || !description || !fundingStage) {
+      return res.status(400).json({ message: "Missing required fields." });
+    }
+
+    const startup = {
+      name,
+      logoUrl,
+      industry,
+      description,
+      fundingStage,
+      founderEmail: req.user.email,
+      createdAt: new Date(),
+      status: "pending",
+    };
+
+    const result = await startupCollection.insertOne(startup);
+    res
+      .status(201)
+      .json({ success: true, startup: { _id: result.insertedId, ...startup } });
+  } catch (error) {
+    console.error("POST /api/startup error:", error);
+    res.status(500).json({ message: "Failed to create startup." });
+  }
 });
 
 app.delete("/api/startups/:id", verifyToken, async (req, res) => {
@@ -490,7 +514,7 @@ app.patch("/api/startups/:id", verifyToken, async (req, res) => {
 
 // All Opportunities Api
 
-app.get("/opportunities/latest", async (req, res) => {
+app.get("/api/opportunities/latest", async (req, res) => {
   const limit = parseInt(req.query.limit) || 3;
 
   const latest = await opportunityCollection
@@ -533,7 +557,6 @@ app.post("/api/opportunity", verifyToken, async (req, res) => {
 
   const result = await opportunityCollection.insertOne({
     ...opportunity,
-    status: "pending",
   });
   res.send(result);
 });
@@ -704,6 +727,14 @@ app.patch("/api/applications/:id", verifyToken, async (req, res) => {
 });
 
 // All user Api
+app.patch("/api/user/:email", async (req, res) => {
+  const { email } = req.params;
+  const result = await userCollection.updateOne(
+    { email: email },
+    { $set: { isPremium: true } },
+  );
+  res.send(result);
+});
 
 app.get("/api/user/me", verifyToken, async (req, res) => {
   try {

@@ -1,45 +1,64 @@
-# StartupForge API server
+# StartupForge API Server
 
-This Express service provides the MongoDB-backed API used by the StartupForge Next.js client.
+The Express + MongoDB backend for **StartupForge** — a platform connecting startup founders with collaborators (developers, designers, marketers). This service powers the [https://startupforge-blush.vercel.app](https://github.com/ibn-azam), exposing role-based endpoints for founders, collaborators, and admins.
 
 ## Stack
 
-- Node.js and Express
-- MongoDB
-- Better Auth JWT verification through the configured JWKS endpoint
-- Stripe transaction integration
+- **Runtime:** Node.js + Express 5
+- **Database:** MongoDB (native driver)
+- **Auth:** Better Auth JWT verification via JWKS (`jose`)
+- **Payments:** Stripe (checkout + webhooks)
+- **Hosting:** Vercel (serverless functions)
 
-## Local setup
+## Features
 
-1. Install Node.js 20 or newer.
-2. Install dependencies: `npm install`
-3. Create `.env` with:
+- Public browsing of startups and opportunities
+- Authenticated startup, opportunity, application, and profile management
+- Collaborator applications to open opportunities
+- Stripe-backed payment recording and personal transaction history
+- Admin-only endpoints for user management, startup moderation, transactions, and platform statistics
+- Role-aware access control (`founder`, `collaborator`, `admin`) enforced from the JWT payload
 
-```env
-PORT=5000
-MONGODB_URI=
-DB=startupforge
-JWKS=
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
-CLIENT_ORIGIN=http://localhost:3000
-JWT_ISSUER=
-JWT_AUDIENCE=
-JWT_ALGORITHMS=EdDSA
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20+
+- A MongoDB Atlas cluster (or local MongoDB instance)
+- A Stripe account (test mode is fine for local dev)
+- A running instance of the StartupForge client with Better Auth configured (for JWKS)
+
+
+
+
+
+
+
+
+## API Overview
+
+All private routes require a Better Auth JWT in the request header:
+
+```
+Authorization: Bearer <token>
 ```
 
-4. Start the server: `npm start`
-5. Confirm it responds at `http://localhost:5000/`.
+Admin routes additionally require the authenticated user's role to be `admin`.
 
-## API areas
+| Area | Access | Notes |
+|---|---|---|
+| Startups & opportunities (browse) | Public | Read-only listing/search endpoints |
+| Startups, opportunities, applications, profile | Authenticated | Scoped to the requesting user |
+| Payments & transactions | Authenticated | Records are written only after Stripe payment fulfillment is verified |
+| Users, startup moderation, transactions, stats | Admin | Requires `admin` role in the JWT-derived user record |
 
-- Public startup and opportunity browsing
-- Authenticated startup, opportunity, application, and profile operations
-- Authenticated payment recording and personal transactions
-- Admin-only users, startup moderation, transaction, and statistics endpoints
+## Security Notes
 
-All private endpoints require a Better Auth JWT in the `Authorization: Bearer <token>` header. Admin endpoints additionally require the `admin` role. Payment records are stored in MongoDB and are intended to be written only after verified Stripe payment fulfillment.
+- Never commit `.env` files or credentials.
+- Stripe webhooks are delivered to `/api/stripe/webhook`; payment records are only written after signature verification.
+- In production, set `CLIENT_ORIGIN` to the deployed client URL rather than allowing all origins.
+- Ensure MongoDB Atlas network access permits Vercel's serverless IP ranges (`0.0.0.0/0` if IPs aren't static).
 
-## Security
+## Deployment
 
-Do not commit `.env` files or credentials. Configure Stripe to deliver signed events to `/api/stripe/webhook`; payment fulfillment is performed only after signature verification. Configure CORS to the deployed client origin instead of allowing every origin in production.
+Configured for deployment on Vercel as serverless functions (see `vercel.json`). Set the environment variables above in the Vercel project settings before deploying.
